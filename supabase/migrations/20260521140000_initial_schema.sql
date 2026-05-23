@@ -475,7 +475,7 @@ create policy staff_delete on public.staff for delete to authenticated using (pu
 create policy customers_select on public.customers for select to authenticated using (public.current_app_role() in ('owner', 'manager', 'accountant', 'staff'));
 create policy customers_insert on public.customers for insert to authenticated with check (public.current_app_role() in ('owner', 'manager', 'staff'));
 create policy customers_update on public.customers for update to authenticated using (public.current_app_role() in ('owner', 'manager')) with check (public.current_app_role() in ('owner', 'manager'));
-create policy customers_delete on public.customers for delete to authenticated using (public.current_app_role() = 'owner');
+create policy customers_delete on public.customers for delete to authenticated using (public.current_app_role() in ('owner', 'manager'));
 
 create policy bikes_select on public.bikes for select to authenticated using (public.current_app_role() in ('owner', 'manager'));
 create policy bikes_insert on public.bikes for insert to authenticated with check (public.current_app_role() in ('owner', 'manager'));

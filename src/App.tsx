@@ -44,6 +44,7 @@ import type {
   ActivityLog,
   Bike as InventoryBike,
   BikeSale,
+  Customer,
   DuePayment,
   DueRecord,
   MoneyTransaction,
@@ -833,6 +834,50 @@ export default function App() {
     event.currentTarget.reset();
   };
 
+  const updateCustomer = async (event: FormEvent<HTMLFormElement>, customer: Customer) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const updatedCustomer: Customer = {
+      ...customer,
+      name: String(form.get("name") || ""),
+      phone: String(form.get("phone") || ""),
+      alternative_phone: String(form.get("alternative_phone") || ""),
+      address: String(form.get("address") || ""),
+      nid_number: String(form.get("nid_number") || ""),
+      status: String(form.get("status") || "Regular") as Customer["status"],
+      notes: String(form.get("notes") || ""),
+    };
+    try {
+      await updateRecord("customers", customer.id, updatedCustomer);
+      setData((current) => current && { ...current, customers: current.customers.map((item) => (item.id === customer.id ? updatedCustomer : item)) });
+      addActivity(`Updated customer ${updatedCustomer.name}`, "Customer");
+      return true;
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Unable to update customer.");
+      return false;
+    }
+  };
+
+  const deleteCustomer = async (customer: Customer) => {
+    const hasLinkedRecords =
+      data.sales.some((sale) => sale.customer_id === customer.id || sale.customer_phone === customer.phone) ||
+      data.dues.some((due) => due.customer_id === customer.id || due.customer_phone === customer.phone) ||
+      data.services.some((service) => service.customer_id === customer.id || service.customer_phone === customer.phone);
+    if (hasLinkedRecords) {
+      window.alert("This customer has linked sales, due, or service records. Delete those records before deleting the customer profile.");
+      return;
+    }
+    const confirmed = window.confirm(`Delete customer ${customer.name}?`);
+    if (!confirmed) return;
+    try {
+      await deleteRecord("customers", customer.id);
+      setData((current) => current && { ...current, customers: current.customers.filter((item) => item.id !== customer.id) });
+      addActivity(`Deleted customer ${customer.name}`, "Customer");
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Unable to delete customer.");
+    }
+  };
+
   const allowedNav = nav.filter((item) => rolePages[role].includes(item.id));
 
   return (
@@ -926,7 +971,16 @@ export default function App() {
           />
         )}
         {page === "finance" && <FinanceModule data={data} query={query} addMoneyTransaction={addMoneyTransaction} />}
-        {page === "customers" && <CustomersModule data={data} query={query} addCustomer={addCustomer} />}
+        {page === "customers" && (
+          <CustomersModule
+            data={data}
+            query={query}
+            addCustomer={addCustomer}
+            updateCustomer={updateCustomer}
+            deleteCustomer={deleteCustomer}
+            canManageCustomers={role === "owner" || role === "manager"}
+          />
+        )}
         {page === "reports" && <ReportsModule data={data} metrics={metrics} expenses={expenses} query={query} />}
         {page === "backup" && <BackupModule data={data} query={query} />}
         {page === "activity" && role === "owner" && (
@@ -1616,8 +1670,23 @@ function FinanceModule({ data, query, addMoneyTransaction }: { data: WorkspaceDa
   );
 }
 
-function CustomersModule({ data, query, addCustomer }: { data: WorkspaceData; query: string; addCustomer: (event: FormEvent<HTMLFormElement>) => void }) {
+function CustomersModule({
+  data,
+  query,
+  addCustomer,
+  updateCustomer,
+  deleteCustomer,
+  canManageCustomers,
+}: {
+  data: WorkspaceData;
+  query: string;
+  addCustomer: (event: FormEvent<HTMLFormElement>) => void;
+  updateCustomer: (event: FormEvent<HTMLFormElement>, customer: Customer) => Promise<boolean>;
+  deleteCustomer: (customer: Customer) => void;
+  canManageCustomers: boolean;
+}) {
   const [showForm, setShowForm] = useState(false);
+  const [editingCustomer, setEditingCustomer] = useState<Customer | null>(null);
   const customers = data.customers.filter((customer) => matchesCustomer(customer, data, query));
   return (
     <section className="page-stack">
@@ -1639,17 +1708,52 @@ function CustomersModule({ data, query, addCustomer }: { data: WorkspaceData; qu
           </form>
         </Panel>
       )}
+      {editingCustomer && (
+        <Panel title={`Edit Customer - ${editingCustomer.name}`}>
+          <form
+            className="form-grid"
+            onSubmit={(event) => {
+              void updateCustomer(event, editingCustomer).then((saved) => {
+                if (saved) setEditingCustomer(null);
+              });
+            }}
+          >
+            <Field name="name" label="Customer Name" defaultValue={editingCustomer.name} required />
+            <Field name="phone" label="Phone" defaultValue={editingCustomer.phone} required />
+            <Field name="alternative_phone" label="Alternative Phone" defaultValue={editingCustomer.alternative_phone} />
+            <Field name="address" label="Address" defaultValue={editingCustomer.address} required />
+            <Field name="nid_number" label="NID Number" defaultValue={editingCustomer.nid_number} />
+            <SelectField name="status" label="Status" options={["Regular", "Good Payer", "Risky", "Blacklisted"]} defaultValue={editingCustomer.status} />
+            <Field name="notes" label="Notes" defaultValue={editingCustomer.notes} />
+            <div className="button-row full">
+              <button type="button" className="secondary" onClick={() => setEditingCustomer(null)}>Cancel</button>
+              <button type="submit"><Users size={16} /> Save Changes</button>
+            </div>
+          </form>
+        </Panel>
+      )}
       <Panel title="Customer Directory">
         <Table
-          headers={["Customer", "Address", "Status", "Sales", "Active Due", "Service Records"]}
-          rows={customers.map((customer) => [
-            customerCell(customer.name, customer.phone),
-            customer.address,
-            <StatusBadge value={customer.status} />,
-            data.sales.filter((sale) => sale.customer_id === customer.id).length,
-            formatBDT(data.dues.filter((due) => due.customer_id === customer.id).reduce((sum, due) => sum + due.remaining_due, 0)),
-            data.services.filter((service) => service.customer_id === customer.id).length,
-          ])}
+          headers={canManageCustomers ? ["Customer", "Address", "Status", "Sales", "Active Due", "Service Records", "Actions"] : ["Customer", "Address", "Status", "Sales", "Active Due", "Service Records"]}
+          rows={customers.map((customer) => {
+            const row: React.ReactNode[] = [
+              customerCell(customer.name, customer.phone),
+              customer.address,
+              <StatusBadge value={customer.status} />,
+              data.sales.filter((sale) => sale.customer_id === customer.id).length,
+              formatBDT(data.dues.filter((due) => due.customer_id === customer.id).reduce((sum, due) => sum + due.remaining_due, 0)),
+              data.services.filter((service) => service.customer_id === customer.id).length,
+            ];
+            if (canManageCustomers) {
+              row.push(
+                <div className="row-actions">
+                  <button className="small secondary" onClick={() => setEditingCustomer(customer)}>Edit</button>
+                  <button className="small danger" onClick={() => deleteCustomer(customer)}>Delete</button>
+                </div>,
+              );
+            }
+            return row;
+          })}
         />
       </Panel>
     </section>

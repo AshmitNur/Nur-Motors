@@ -524,7 +524,7 @@ drop policy if exists customers_delete on public.customers;
 create policy customers_select on public.customers for select to authenticated using (public.current_app_role() in ('owner', 'manager', 'accountant', 'staff'));
 create policy customers_insert on public.customers for insert to authenticated with check (public.current_app_role() in ('owner', 'manager', 'staff'));
 create policy customers_update on public.customers for update to authenticated using (public.current_app_role() in ('owner', 'manager')) with check (public.current_app_role() in ('owner', 'manager'));
-create policy customers_delete on public.customers for delete to authenticated using (public.current_app_role() = 'owner');
+create policy customers_delete on public.customers for delete to authenticated using (public.current_app_role() in ('owner', 'manager'));
 
 drop policy if exists bikes_select on public.bikes;
 drop policy if exists bikes_insert on public.bikes;
