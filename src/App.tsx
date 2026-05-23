@@ -55,7 +55,7 @@ import type {
 } from "./types";
 import { dashboardMetrics, dueStatus, expenseCategorySeries, formatBDT, isLowStock, monthlySeries, serviceProfit, todayISO } from "./lib/calculations";
 import { downloadBikeSaleInvoice, downloadBusinessSummary, downloadDueReceipt } from "./lib/invoiceDocuments";
-import { createMemberUser, insertRecord, loadCurrentProfile, loadWorkspaceData, updateRecord } from "./lib/repository";
+import { createMemberUser, deleteRecord, insertRecord, loadCurrentProfile, loadWorkspaceData, updateRecord } from "./lib/repository";
 import { hasSupabaseConfig, supabase } from "./lib/supabase";
 
 type Page = "dashboard" | "sales" | "service" | "inventory" | "finance" | "customers" | "reports" | "backup" | "activity";
@@ -514,6 +514,45 @@ export default function App() {
     setDrawerDue(null);
   };
 
+  const deleteBikeSale = async (sale: BikeSale) => {
+    const confirmed = window.confirm(`Delete ${sale.sale_no} for ${sale.customer_name}? This will also remove linked due and payment records.`);
+    if (!confirmed) return;
+
+    const linkedDues = data.dues.filter((due) => due.sale_id === sale.id);
+    const linkedDueIds = new Set(linkedDues.map((due) => due.id));
+    const linkedPayments = data.duePayments.filter((payment) => linkedDueIds.has(payment.due_record_id));
+    const linkedReceiptNumbers = new Set(linkedPayments.map((payment) => payment.receipt_number));
+    const linkedCredits = data.credits.filter(
+      (credit) =>
+        credit.purpose.includes(sale.sale_no) ||
+        Array.from(linkedReceiptNumbers).some((receiptNumber) => credit.purpose.includes(receiptNumber)),
+    );
+
+    try {
+      await Promise.all(linkedPayments.map((payment) => deleteRecord("duePayments", payment.id)));
+      await Promise.all(linkedDues.map((due) => deleteRecord("dues", due.id)));
+      await Promise.all(linkedCredits.map((credit) => deleteRecord("credits", credit.id)));
+      await deleteRecord("sales", sale.id);
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Unable to delete sale.");
+      return;
+    }
+
+    setData((current) =>
+      current && {
+        ...current,
+        sales: current.sales.filter((item) => item.id !== sale.id),
+        dues: current.dues.filter((due) => !linkedDueIds.has(due.id)),
+        duePayments: current.duePayments.filter((payment) => !linkedDueIds.has(payment.due_record_id)),
+        credits: current.credits.filter((credit) => !linkedCredits.some((linked) => linked.id === credit.id)),
+        bikes: current.bikes.map((bike) => (bike.chassis_number === sale.chassis_number ? { ...bike, current_status: "Available" } : bike)),
+      },
+    );
+    const bike = data.bikes.find((item) => item.chassis_number === sale.chassis_number);
+    if (bike) void updateRecord("bikes", bike.id, { current_status: "Available" });
+    addActivity(`Deleted bike sale ${sale.sale_no}`, "Bike Sale");
+  };
+
   const addServiceRecord = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -785,6 +824,7 @@ export default function App() {
             addBikeSale={addBikeSale}
             openDue={setDrawerDue}
             canDelete={role === "owner"}
+            deleteBikeSale={deleteBikeSale}
             query={query}
           />
         )}
@@ -1046,6 +1086,7 @@ function SalesDues({
   addBikeSale,
   openDue,
   canDelete,
+  deleteBikeSale,
   query,
 }: {
   tab: Tab;
@@ -1055,6 +1096,7 @@ function SalesDues({
   addBikeSale: (event: FormEvent<HTMLFormElement>) => void;
   openDue: (due: DueRecord) => void;
   canDelete: boolean;
+  deleteBikeSale: (sale: BikeSale) => void;
   query: string;
 }) {
   const activeDues = data.dues.filter((due) => matchesDue(due, query)).map((due) => ({ ...due, payment_status: dueStatus(due) }));
@@ -1125,7 +1167,7 @@ function SalesDues({
                 <StatusBadge value={sale.due_amount > 0 ? "Partially Paid" : "Paid"} />,
                 <div className="row-actions">
                   <button className="small" onClick={() => downloadBikeSaleInvoice(sale, due, payments)}><FileDown size={14} /> Invoice</button>
-                  {canDelete && <button className="small danger">Delete</button>}
+                  {canDelete && <button className="small danger" onClick={() => deleteBikeSale(sale)}>Delete</button>}
                 </div>,
               ];
             })}

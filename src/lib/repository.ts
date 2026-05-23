@@ -82,6 +82,13 @@ export async function updateRecord<T extends keyof typeof tableMap>(collection: 
   return data;
 }
 
+export async function deleteRecord<T extends keyof typeof tableMap>(collection: T, id: string) {
+  if (!supabase) return null;
+  const { error } = await supabase.from(tableMap[collection]).delete().eq("id", id);
+  if (error) throw error;
+  return true;
+}
+
 export async function loadCurrentProfile() {
   if (!supabase) return null;
   const { data: userData, error: userError } = await supabase.auth.getUser();
