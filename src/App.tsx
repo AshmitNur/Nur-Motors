@@ -385,6 +385,7 @@ export default function App() {
     const saleNo = `SALE-${new Date().getFullYear()}-${String(data.sales.length + 1).padStart(4, "0")}`;
     const customerName = String(form.get("customer_name") || "");
     const customerPhone = String(form.get("customer_phone") || "");
+    const existingCustomer = data.customers.find((customer) => customer.phone === customerPhone);
     const bikeModel = String(form.get("bike_model") || "");
     const bikeBrand = "Suzuki";
     const chassis = String(form.get("chassis_number") || "");
@@ -392,7 +393,7 @@ export default function App() {
       id: crypto.randomUUID(),
       sale_no: saleNo,
       sale_date: String(form.get("sale_date") || todayISO()),
-      customer_id: "manual",
+      customer_id: existingCustomer?.id ?? "",
       customer_name: customerName,
       customer_phone: customerPhone,
       bike_brand: bikeBrand,
@@ -454,8 +455,8 @@ export default function App() {
         bikes: current.bikes.map((bike) => (bike.chassis_number === chassis ? { ...bike, current_status: "Sold" } : bike)),
       },
     );
-    void insertRecord("sales", sale);
-    if (due) void insertRecord("dues", due);
+    void insertRecord("sales", { ...sale, customer_id: existingCustomer?.id ?? null });
+    if (due) void insertRecord("dues", { ...due, customer_id: existingCustomer?.id ?? null });
     void insertRecord("credits", credit);
     addActivity(`Added bike sale ${saleNo}`, "Bike Sale");
     event.currentTarget.reset();
@@ -512,6 +513,203 @@ export default function App() {
     void insertRecord("credits", credit);
     addActivity(`Collected ${formatBDT(amount)} from ${drawerDue.customer_name}`, "Due Payment");
     setDrawerDue(null);
+  };
+
+  const addServiceRecord = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const customerPhone = String(form.get("customer_phone") || "");
+    const existingCustomer = data.customers.find((customer) => customer.phone === customerPhone);
+    const serviceCharge = Number(form.get("service_charge") || 0);
+    const partsCost = Number(form.get("parts_cost") || 0);
+    const totalBill = serviceCharge + partsCost;
+    const paidAmount = Number(form.get("paid_amount") || 0);
+    const dueAmount = Math.max(totalBill - paidAmount, 0);
+    const serviceNo = `SVC-${new Date().getFullYear()}-${String(data.services.length + 1).padStart(4, "0")}`;
+    const service: ServiceRecord = {
+      id: crypto.randomUUID(),
+      service_no: serviceNo,
+      service_date: String(form.get("service_date") || todayISO()),
+      customer_id: existingCustomer?.id ?? "",
+      customer_name: String(form.get("customer_name") || ""),
+      customer_phone: customerPhone,
+      bike_brand: "Suzuki",
+      bike_model: String(form.get("bike_model") || ""),
+      service_type: String(form.get("service_type") || ""),
+      parts_used: String(form.get("parts_used") || ""),
+      service_charge: serviceCharge,
+      parts_cost: partsCost,
+      total_bill: totalBill,
+      paid_amount: paidAmount,
+      due_amount: dueAmount,
+      payment_method: String(form.get("payment_method") || "Cash") as PaymentMethod,
+      mechanic_name: String(form.get("mechanic_name") || ""),
+      notes: String(form.get("notes") || ""),
+    };
+    const credit: MoneyTransaction | null =
+      paidAmount > 0
+        ? {
+            id: crypto.randomUUID(),
+            transaction_date: service.service_date,
+            category: "Service income",
+            amount: paidAmount,
+            payment_method: service.payment_method,
+            person: service.customer_name,
+            purpose: `${serviceNo} service payment`,
+            related_module: "Service",
+            added_by: service.mechanic_name || displayName,
+          }
+        : null;
+
+    setData((current) =>
+      current && {
+        ...current,
+        services: [service, ...current.services],
+        credits: credit ? [credit, ...current.credits] : current.credits,
+      },
+    );
+    void insertRecord("services", { ...service, customer_id: existingCustomer?.id ?? null });
+    if (credit) void insertRecord("credits", credit);
+    addActivity(`Added service record ${serviceNo}`, "Service");
+    event.currentTarget.reset();
+  };
+
+  const addBikeStock = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const purchasePrice = Number(form.get("purchase_price") || 0);
+    const bike: InventoryBike = {
+      id: crypto.randomUUID(),
+      brand: "Suzuki",
+      model: String(form.get("model") || ""),
+      color: String(form.get("color") || ""),
+      year: Number(form.get("year") || new Date().getFullYear()),
+      chassis_number: String(form.get("chassis_number") || ""),
+      engine_number: String(form.get("engine_number") || ""),
+      purchase_price: purchasePrice,
+      supplier_name: String(form.get("supplier_name") || "Suzuki Dealer BD"),
+      purchase_date: String(form.get("purchase_date") || todayISO()),
+      current_status: "Available",
+      location: String(form.get("location") || "Showroom"),
+    };
+    const debit: MoneyTransaction | null =
+      purchasePrice > 0
+        ? {
+            id: crypto.randomUUID(),
+            transaction_date: bike.purchase_date,
+            category: "Bike purchase",
+            amount: purchasePrice,
+            payment_method: String(form.get("payment_method") || "Bank") as PaymentMethod,
+            person: bike.supplier_name,
+            purpose: `${bike.model} stock purchase`,
+            related_module: "Bike stock",
+            added_by: displayName,
+          }
+        : null;
+    setData((current) =>
+      current && {
+        ...current,
+        bikes: [bike, ...current.bikes],
+        debits: debit ? [debit, ...current.debits] : current.debits,
+      },
+    );
+    void insertRecord("bikes", bike);
+    if (debit) void insertRecord("debits", debit);
+    addActivity(`Added Suzuki ${bike.model} to stock`, "Bike Stock");
+    event.currentTarget.reset();
+  };
+
+  const addPartStock = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const quantity = Number(form.get("quantity_available") || 0);
+    const purchasePrice = Number(form.get("purchase_price_per_unit") || 0);
+    const part: Part = {
+      id: crypto.randomUUID(),
+      part_name: String(form.get("part_name") || ""),
+      category: String(form.get("category") || ""),
+      brand: String(form.get("brand") || ""),
+      quantity_available: quantity,
+      purchase_price_per_unit: purchasePrice,
+      selling_price_per_unit: Number(form.get("selling_price_per_unit") || 0),
+      supplier_name: String(form.get("supplier_name") || ""),
+      minimum_stock_level: Number(form.get("minimum_stock_level") || 0),
+      location: String(form.get("location") || ""),
+    };
+    const totalCost = quantity * purchasePrice;
+    const debit: MoneyTransaction | null =
+      totalCost > 0
+        ? {
+            id: crypto.randomUUID(),
+            transaction_date: String(form.get("purchase_date") || todayISO()),
+            category: "Parts purchase",
+            amount: totalCost,
+            payment_method: String(form.get("payment_method") || "Cash") as PaymentMethod,
+            person: part.supplier_name,
+            purpose: `${part.part_name} stock purchase`,
+            related_module: "Parts stock",
+            added_by: displayName,
+          }
+        : null;
+    setData((current) =>
+      current && {
+        ...current,
+        parts: [part, ...current.parts],
+        debits: debit ? [debit, ...current.debits] : current.debits,
+      },
+    );
+    void insertRecord("parts", part);
+    if (debit) void insertRecord("debits", debit);
+    addActivity(`Added part stock ${part.part_name}`, "Parts Stock");
+    event.currentTarget.reset();
+  };
+
+  const addMoneyTransaction = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const transactionType = String(form.get("transaction_type") || "Debit");
+    const transaction: MoneyTransaction = {
+      id: crypto.randomUUID(),
+      transaction_date: String(form.get("transaction_date") || todayISO()),
+      category: String(form.get("category") || ""),
+      amount: Number(form.get("amount") || 0),
+      payment_method: String(form.get("payment_method") || "Cash") as PaymentMethod,
+      person: String(form.get("person") || ""),
+      purpose: String(form.get("purpose") || ""),
+      related_module: "Manual finance entry",
+      added_by: String(form.get("added_by") || displayName),
+      notes: String(form.get("notes") || ""),
+    };
+    const isCredit = transactionType === "Credit";
+    setData((current) =>
+      current && {
+        ...current,
+        credits: isCredit ? [transaction, ...current.credits] : current.credits,
+        debits: isCredit ? current.debits : [transaction, ...current.debits],
+      },
+    );
+    void insertRecord(isCredit ? "credits" : "debits", transaction);
+    addActivity(`Added ${transactionType.toLowerCase()} ${formatBDT(transaction.amount)}`, "Finance");
+    event.currentTarget.reset();
+  };
+
+  const addCustomer = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const customer = {
+      id: crypto.randomUUID(),
+      name: String(form.get("name") || ""),
+      phone: String(form.get("phone") || ""),
+      alternative_phone: String(form.get("alternative_phone") || ""),
+      address: String(form.get("address") || ""),
+      nid_number: String(form.get("nid_number") || ""),
+      status: String(form.get("status") || "Regular") as WorkspaceData["customers"][number]["status"],
+      notes: String(form.get("notes") || ""),
+    };
+    setData((current) => current && { ...current, customers: [customer, ...current.customers] });
+    void insertRecord("customers", customer);
+    addActivity(`Added customer ${customer.name}`, "Customer");
+    event.currentTarget.reset();
   };
 
   const allowedNav = nav.filter((item) => rolePages[role].includes(item.id));
@@ -591,10 +789,10 @@ export default function App() {
             query={query}
           />
         )}
-        {page === "service" && <ServiceModule data={data} query={query} />}
-        {page === "inventory" && <InventoryModule data={data} query={query} />}
-        {page === "finance" && <FinanceModule data={data} query={query} />}
-        {page === "customers" && <CustomersModule data={data} query={query} />}
+        {page === "service" && <ServiceModule data={data} query={query} addServiceRecord={addServiceRecord} />}
+        {page === "inventory" && <InventoryModule data={data} query={query} addBikeStock={addBikeStock} addPartStock={addPartStock} />}
+        {page === "finance" && <FinanceModule data={data} query={query} addMoneyTransaction={addMoneyTransaction} />}
+        {page === "customers" && <CustomersModule data={data} query={query} addCustomer={addCustomer} />}
         {page === "reports" && <ReportsModule data={data} metrics={metrics} expenses={expenses} query={query} />}
         {page === "backup" && <BackupModule data={data} query={query} />}
         {page === "activity" && role === "owner" && (
@@ -984,11 +1182,34 @@ function SalesDues({
   );
 }
 
-function ServiceModule({ data, query }: { data: WorkspaceData; query: string }) {
+function ServiceModule({ data, query, addServiceRecord }: { data: WorkspaceData; query: string; addServiceRecord: (event: FormEvent<HTMLFormElement>) => void }) {
+  const [showForm, setShowForm] = useState(false);
   const services = data.services.filter((service) => matchesService(service, query));
   return (
     <section className="page-stack">
-      <PageTitle eyebrow="Service" title="Service Income and Parts Usage" action={<button><Wrench size={16} /> Add Service</button>} />
+      <PageTitle eyebrow="Service" title="Service Income and Parts Usage" action={<button onClick={() => setShowForm((current) => !current)}><Wrench size={16} /> Add Service</button>} />
+      {showForm && (
+        <Panel title="Add Service Record">
+          <form className="form-grid" onSubmit={addServiceRecord}>
+            <Field name="service_date" label="Service Date" type="date" defaultValue={todayISO()} required />
+            <Field name="customer_name" label="Customer Name" required />
+            <Field name="customer_phone" label="Customer Phone" required />
+            <Field name="bike_model" label="Suzuki Bike Model" required />
+            <Field name="service_type" label="Service Type" required />
+            <Field name="parts_used" label="Parts Used" />
+            <Field name="service_charge" label="Service Charge" type="number" defaultValue={0} required />
+            <Field name="parts_cost" label="Parts Cost" type="number" defaultValue={0} />
+            <Field name="paid_amount" label="Paid Amount" type="number" defaultValue={0} />
+            <SelectField name="payment_method" label="Payment Method" options={paymentMethods} defaultValue="Cash" />
+            <Field name="mechanic_name" label="Mechanic Name" required />
+            <Field name="notes" label="Notes" />
+            <div className="button-row full">
+              <button type="button" className="secondary" onClick={() => setShowForm(false)}>Cancel</button>
+              <button type="submit"><Wrench size={16} /> Save Service</button>
+            </div>
+          </form>
+        </Panel>
+      )}
       <div className="mini-grid">
         <Metric title="Service Income" value={formatBDT(data.services.reduce((sum, item) => sum + item.paid_amount, 0))} />
         <Metric title="Service Due" value={formatBDT(data.services.reduce((sum, item) => sum + item.due_amount, 0))} />
@@ -1014,12 +1235,65 @@ function ServiceModule({ data, query }: { data: WorkspaceData; query: string }) 
   );
 }
 
-function InventoryModule({ data, query }: { data: WorkspaceData; query: string }) {
+function InventoryModule({
+  data,
+  query,
+  addBikeStock,
+  addPartStock,
+}: {
+  data: WorkspaceData;
+  query: string;
+  addBikeStock: (event: FormEvent<HTMLFormElement>) => void;
+  addPartStock: (event: FormEvent<HTMLFormElement>) => void;
+}) {
+  const [showForm, setShowForm] = useState(false);
   const bikes = data.bikes.filter((bike) => matchesBike(bike, query));
   const parts = data.parts.filter((part) => matchesPart(part, query));
   return (
     <section className="page-stack">
-      <PageTitle eyebrow="Inventory" title="Bike Stock and Parts Stock" action={<button><PackagePlus size={16} /> Add Stock</button>} />
+      <PageTitle eyebrow="Inventory" title="Bike Stock and Parts Stock" action={<button onClick={() => setShowForm((current) => !current)}><PackagePlus size={16} /> Add Stock</button>} />
+      {showForm && (
+        <Panel title="Add Stock">
+          <div className="dual-form-grid">
+            <form className="form-grid single" onSubmit={addBikeStock}>
+              <SectionTitle title="Suzuki Bike Stock" />
+              <Field name="model" label="Model" required />
+              <Field name="color" label="Color" />
+              <Field name="year" label="Year" type="number" defaultValue={new Date().getFullYear()} required />
+              <Field name="chassis_number" label="Chassis Number" required />
+              <Field name="engine_number" label="Engine Number" required />
+              <Field name="purchase_price" label="Purchase Price" type="number" defaultValue={0} required />
+              <Field name="supplier_name" label="Supplier" defaultValue="Suzuki Dealer BD" required />
+              <Field name="purchase_date" label="Purchase Date" type="date" defaultValue={todayISO()} />
+              <Field name="location" label="Location" defaultValue="Showroom" />
+              <SelectField name="payment_method" label="Payment Method" options={paymentMethods} defaultValue="Bank" />
+              <div className="button-row full">
+                <button type="submit"><Bike size={16} /> Save Bike</button>
+              </div>
+            </form>
+            <form className="form-grid single" onSubmit={addPartStock}>
+              <SectionTitle title="Parts Stock" />
+              <Field name="part_name" label="Part Name" required />
+              <Field name="category" label="Category" required />
+              <Field name="brand" label="Part Brand" />
+              <Field name="quantity_available" label="Quantity" type="number" defaultValue={0} required />
+              <Field name="minimum_stock_level" label="Minimum Stock" type="number" defaultValue={0} />
+              <Field name="purchase_price_per_unit" label="Buy Price / Unit" type="number" defaultValue={0} required />
+              <Field name="selling_price_per_unit" label="Sell Price / Unit" type="number" defaultValue={0} required />
+              <Field name="supplier_name" label="Supplier" required />
+              <Field name="purchase_date" label="Purchase Date" type="date" defaultValue={todayISO()} />
+              <Field name="location" label="Location" />
+              <SelectField name="payment_method" label="Payment Method" options={paymentMethods} defaultValue="Cash" />
+              <div className="button-row full">
+                <button type="submit"><PackagePlus size={16} /> Save Part</button>
+              </div>
+            </form>
+          </div>
+          <div className="button-row full">
+            <button type="button" className="secondary" onClick={() => setShowForm(false)}>Close Stock Forms</button>
+          </div>
+        </Panel>
+      )}
       <div className="inventory-stack">
         <Panel title="Bike Stock">
           <Table
@@ -1054,7 +1328,8 @@ function InventoryModule({ data, query }: { data: WorkspaceData; query: string }
   );
 }
 
-function FinanceModule({ data, query }: { data: WorkspaceData; query: string }) {
+function FinanceModule({ data, query, addMoneyTransaction }: { data: WorkspaceData; query: string; addMoneyTransaction: (event: FormEvent<HTMLFormElement>) => void }) {
+  const [showForm, setShowForm] = useState(false);
   const debits = data.debits.filter((item) => matchesTransaction(item, query));
   const credits = data.credits.filter((item) => matchesTransaction(item, query));
   const salaryPayments = data.salaryPayments.filter((item) =>
@@ -1078,7 +1353,26 @@ function FinanceModule({ data, query }: { data: WorkspaceData; query: string }) 
   );
   return (
     <section className="page-stack">
-      <PageTitle eyebrow="Finance" title="Debit, Credit, Salary, Home Expenses and Others" action={<button><Calculator size={16} /> Add Transaction</button>} />
+      <PageTitle eyebrow="Finance" title="Debit, Credit, Salary, Home Expenses and Others" action={<button onClick={() => setShowForm((current) => !current)}><Calculator size={16} /> Add Transaction</button>} />
+      {showForm && (
+        <Panel title="Add Transaction">
+          <form className="form-grid" onSubmit={addMoneyTransaction}>
+            <SelectField name="transaction_type" label="Type" options={["Debit", "Credit"]} defaultValue="Debit" />
+            <Field name="transaction_date" label="Date" type="date" defaultValue={todayISO()} required />
+            <Field name="category" label="Category" required />
+            <Field name="amount" label="Amount" type="number" defaultValue={0} required />
+            <SelectField name="payment_method" label="Payment Method" options={paymentMethods} defaultValue="Cash" />
+            <Field name="person" label="Paid To / From" required />
+            <Field name="purpose" label="Purpose" required />
+            <Field name="added_by" label="Added By" defaultValue="Owner" />
+            <Field name="notes" label="Notes" />
+            <div className="button-row full">
+              <button type="button" className="secondary" onClick={() => setShowForm(false)}>Cancel</button>
+              <button type="submit"><Calculator size={16} /> Save Transaction</button>
+            </div>
+          </form>
+        </Panel>
+      )}
       <div className="split-grid">
         <Panel title="Debit Transactions">
           <Table headers={["Date", "Category", "Paid To", "Purpose", "Amount", "Method"]} rows={debits.map((item) => [item.transaction_date, item.category, item.person, item.purpose, formatBDT(item.amount), item.payment_method])} />
@@ -1099,11 +1393,29 @@ function FinanceModule({ data, query }: { data: WorkspaceData; query: string }) 
   );
 }
 
-function CustomersModule({ data, query }: { data: WorkspaceData; query: string }) {
+function CustomersModule({ data, query, addCustomer }: { data: WorkspaceData; query: string; addCustomer: (event: FormEvent<HTMLFormElement>) => void }) {
+  const [showForm, setShowForm] = useState(false);
   const customers = data.customers.filter((customer) => matchesCustomer(customer, data, query));
   return (
     <section className="page-stack">
-      <PageTitle eyebrow="Customers" title="Customer Profiles and Due History" action={<button><Users size={16} /> Add Customer</button>} />
+      <PageTitle eyebrow="Customers" title="Customer Profiles and Due History" action={<button onClick={() => setShowForm((current) => !current)}><Users size={16} /> Add Customer</button>} />
+      {showForm && (
+        <Panel title="Add Customer">
+          <form className="form-grid" onSubmit={addCustomer}>
+            <Field name="name" label="Customer Name" required />
+            <Field name="phone" label="Phone" required />
+            <Field name="alternative_phone" label="Alternative Phone" />
+            <Field name="address" label="Address" required />
+            <Field name="nid_number" label="NID Number" />
+            <SelectField name="status" label="Status" options={["Regular", "Good Payer", "Risky", "Blacklisted"]} defaultValue="Regular" />
+            <Field name="notes" label="Notes" />
+            <div className="button-row full">
+              <button type="button" className="secondary" onClick={() => setShowForm(false)}>Cancel</button>
+              <button type="submit"><Users size={16} /> Save Customer</button>
+            </div>
+          </form>
+        </Panel>
+      )}
       <Panel title="Customer Directory">
         <Table
           headers={["Customer", "Address", "Status", "Sales", "Active Due", "Service Records"]}
