@@ -18,7 +18,6 @@ import {
   LogOut,
   Menu,
   PackagePlus,
-  Printer,
   ReceiptText,
   Search,
   Settings,
@@ -55,7 +54,7 @@ import type {
   WorkspaceData,
 } from "./types";
 import { dashboardMetrics, dueStatus, expenseCategorySeries, formatBDT, isLowStock, monthlySeries, serviceProfit, todayISO } from "./lib/calculations";
-import { downloadBikeSaleInvoice, downloadDueReceipt } from "./lib/invoiceDocuments";
+import { downloadBikeSaleInvoice, downloadBusinessSummary, downloadDueReceipt } from "./lib/invoiceDocuments";
 import { createMemberUser, insertRecord, loadCurrentProfile, loadWorkspaceData, updateRecord } from "./lib/repository";
 import { hasSupabaseConfig, supabase } from "./lib/supabase";
 
@@ -956,7 +955,7 @@ function Dashboard({
 
   return (
     <section className="page-stack">
-      <PageTitle eyebrow="Dashboard" title="Business Overview" action={<button onClick={() => window.print()}><Printer size={16} /> Print Summary</button>} />
+      <PageTitle eyebrow="Dashboard" title="Business Overview" action={<button onClick={() => downloadBusinessSummary(data)}><FileDown size={16} /> Summary PDF</button>} />
       {searchActive && (
         <Panel title={`Search Results for "${query}"`}>
           <Table

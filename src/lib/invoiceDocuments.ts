@@ -1,6 +1,6 @@
 import { jsPDF } from "jspdf";
-import type { BikeSale, DuePayment, DueRecord } from "../types";
-import { dueStatus, formatBDT, todayISO } from "./calculations";
+import type { BikeSale, DuePayment, DueRecord, WorkspaceData } from "../types";
+import { dashboardMetrics, dueStatus, formatBDT, isLowStock, monthlySeries, todayISO } from "./calculations";
 
 const company = {
   name: "Nur Motors & Electronics",
@@ -103,6 +103,85 @@ function footer(doc: jsPDF) {
   doc.text("Authorized Signature", page.right, 290, { align: "right" });
   doc.line(page.margin, 286, page.margin + 45, 286);
   doc.line(page.right - 45, 286, page.right, 286);
+}
+
+function documentFooter(doc: jsPDF, text = "Generated electronically from the Nur Motors & Electronics business system.") {
+  doc.setDrawColor(226, 232, 240);
+  doc.line(page.margin, 282, page.right, 282);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(8);
+  doc.setTextColor(100, 116, 139);
+  doc.text(text, page.margin, 288);
+  doc.text(`Generated: ${new Date().toLocaleString()}`, page.right, 288, { align: "right" });
+}
+
+function addPageIfNeeded(doc: jsPDF, y: number, neededHeight: number) {
+  if (y + neededHeight <= 274) return y;
+  documentFooter(doc);
+  doc.addPage();
+  return 44;
+}
+
+function summaryMetricGrid(doc: jsPDF, items: [string, string, string][], startY: number) {
+  const colWidth = 58;
+  const rowHeight = 22;
+  const gap = 4;
+  let y = startY;
+  items.forEach(([label, value, meta], index) => {
+    if (index > 0 && index % 3 === 0) y += rowHeight + gap;
+    y = addPageIfNeeded(doc, y, rowHeight);
+    const x = page.margin + (index % 3) * (colWidth + gap);
+    doc.setDrawColor(226, 232, 240);
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(x, y, colWidth, rowHeight, 1.5, 1.5, "FD");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text(label.toUpperCase(), x + 3, y + 5);
+    doc.setFontSize(11);
+    doc.setTextColor(15, 23, 42);
+    doc.text(value, x + 3, y + 12.5);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(100, 116, 139);
+    doc.text(meta, x + 3, y + 18.5);
+  });
+  return y + rowHeight + gap;
+}
+
+function dataTable(doc: jsPDF, headers: string[], rows: string[][], x: number, y: number, widths: number[]) {
+  const rowHeight = 8;
+  y = addPageIfNeeded(doc, y, rowHeight * 2);
+  doc.setFillColor(248, 250, 252);
+  doc.setDrawColor(226, 232, 240);
+  doc.rect(x, y, widths.reduce((sum, width) => sum + width, 0), rowHeight, "FD");
+  let cellX = x;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(7.5);
+  doc.setTextColor(71, 85, 105);
+  headers.forEach((header, index) => {
+    doc.text(header.toUpperCase(), cellX + 2, y + 5.5);
+    cellX += widths[index];
+  });
+  y += rowHeight;
+
+  const visibleRows = rows.length ? rows : [["No records found."]];
+  for (const row of visibleRows) {
+    y = addPageIfNeeded(doc, y, rowHeight);
+    cellX = x;
+    doc.setFillColor(row === visibleRows[0] ? 255 : 248, row === visibleRows[0] ? 255 : 250, row === visibleRows[0] ? 255 : 252);
+    doc.setDrawColor(226, 232, 240);
+    doc.rect(x, y, widths.reduce((sum, width) => sum + width, 0), rowHeight, "FD");
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(51, 65, 85);
+    row.forEach((cell, index) => {
+      doc.text(doc.splitTextToSize(String(cell ?? "-"), widths[index] - 4).slice(0, 1), cellX + 2, y + 5.5);
+      cellX += widths[index];
+    });
+    y += rowHeight;
+  }
+  return y + 4;
 }
 
 export function downloadBikeSaleInvoice(sale: BikeSale, due?: DueRecord, payments: DuePayment[] = []) {
@@ -227,4 +306,106 @@ export function downloadDueReceipt(due: DueRecord, payments: DuePayment[] = []) 
 
   footer(doc);
   doc.save(`${sanitizeFileName(company.name)}-${sanitizeFileName(receiptNo)}.pdf`);
+}
+
+export function downloadBusinessSummary(data: WorkspaceData) {
+  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const metrics = dashboardMetrics(data);
+  const months = monthlySeries(data).slice(-6);
+  const overdue = data.dues.filter((due) => dueStatus(due) === "Overdue").slice(0, 10);
+  const lowStock = data.parts.filter(isLowStock).slice(0, 10);
+  const reportNo = `SUM-${todayISO().replace(/-/g, "")}`;
+
+  drawHeader(doc, "Business Summary", reportNo, "Summary");
+  labelValue(doc, "Business", company.name, page.margin, 45, 70);
+  labelValue(doc, "Scope", "Suzuki bikes sales, service, inventory and finance", 88, 45, 70);
+  labelValue(doc, "Report Date", todayISO(), 164, 45, 30);
+
+  sectionTitle(doc, "Key Performance Indicators", 64);
+  let y = summaryMetricGrid(
+    doc,
+    [
+      ["Sales Today", `${metrics.salesToday}`, "bikes"],
+      ["Sales This Month", `${metrics.salesMonth}`, "bikes"],
+      ["Sales This Year", `${metrics.salesYear}`, "bikes"],
+      ["Service Income", money(metrics.serviceIncome), "received"],
+      ["Total Due", money(metrics.totalDue), "open balance"],
+      ["Due Today", `${metrics.dueToday}`, "customers"],
+      ["Upcoming Dues", `${metrics.upcomingDues}`, "next 7 days"],
+      ["Overdue Payments", `${metrics.overdueDues}`, "needs action"],
+      ["Monthly Profit", money(metrics.monthlyProfit), "estimate"],
+      ["Bike Stock", `${metrics.availableBikeStock}`, "available"],
+      ["Parts Stock", `${metrics.availablePartsStock}`, "units"],
+      ["Low Stock Parts", `${metrics.lowStockParts}`, "alerts"],
+    ],
+    78,
+  );
+
+  y = addPageIfNeeded(doc, y + 4, 54);
+  sectionTitle(doc, "Financial Summary", y);
+  simpleTable(
+    doc,
+    [
+      ["Total Credit", money(metrics.totalCredit)],
+      ["Total Debit", money(metrics.totalDebit)],
+      ["Net Cash", money(metrics.netCash)],
+      ["Monthly Expenses", money(metrics.monthlyExpenses)],
+      ["Salary Due", money(metrics.staffSalaryDue)],
+      ["Other Expenses", money(metrics.otherExpenses)],
+    ],
+    page.margin,
+    y + 14,
+    88,
+  );
+  simpleTable(
+    doc,
+    [
+      ["Dhaka Home Expense", money(metrics.dhakaHomeExpense)],
+      ["Dinajpur Home Expense", money(metrics.dinajpurHomeExpense)],
+      ["Total Customers", `${data.customers.length}`],
+      ["Total Services", `${data.services.length}`],
+      ["Bike Records", `${data.bikes.length}`],
+      ["Parts Records", `${data.parts.length}`],
+    ],
+    108,
+    y + 14,
+    88,
+  );
+  y += 76;
+
+  y = addPageIfNeeded(doc, y, 48);
+  sectionTitle(doc, "Recent Monthly Trend", y);
+  y = dataTable(
+    doc,
+    ["Month", "Sales", "Revenue", "Profit"],
+    months.map((month) => [month.month, String(month.sales), money(month.revenue), money(month.profit)]),
+    page.margin,
+    y + 14,
+    [44, 30, 54, 54],
+  );
+
+  y = addPageIfNeeded(doc, y, 48);
+  sectionTitle(doc, "Overdue Payments", y);
+  y = dataTable(
+    doc,
+    ["Customer", "Bike", "Due Date", "Remaining"],
+    overdue.map((due) => [due.customer_name, due.bike_details, due.due_date, money(due.remaining_due)]),
+    page.margin,
+    y + 14,
+    [42, 72, 32, 36],
+  );
+
+  y = addPageIfNeeded(doc, y, 48);
+  sectionTitle(doc, "Low Stock Parts", y);
+  dataTable(
+    doc,
+    ["Part", "Category", "Stock", "Minimum"],
+    lowStock.map((part) => [part.part_name, part.category, String(part.quantity_available), String(part.minimum_stock_level)]),
+    page.margin,
+    y + 14,
+    [70, 46, 30, 36],
+  );
+
+  documentFooter(doc);
+  doc.save(`${sanitizeFileName(company.name)}-${reportNo}.pdf`);
 }
