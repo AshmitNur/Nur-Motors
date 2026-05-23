@@ -533,7 +533,7 @@ drop policy if exists bikes_delete on public.bikes;
 create policy bikes_select on public.bikes for select to authenticated using (public.current_app_role() in ('owner', 'manager'));
 create policy bikes_insert on public.bikes for insert to authenticated with check (public.current_app_role() in ('owner', 'manager'));
 create policy bikes_update on public.bikes for update to authenticated using (public.current_app_role() in ('owner', 'manager')) with check (public.current_app_role() in ('owner', 'manager'));
-create policy bikes_delete on public.bikes for delete to authenticated using (public.current_app_role() = 'owner');
+create policy bikes_delete on public.bikes for delete to authenticated using (public.current_app_role() in ('owner', 'manager'));
 
 drop policy if exists parts_select on public.parts;
 drop policy if exists parts_insert on public.parts;
@@ -542,7 +542,7 @@ drop policy if exists parts_delete on public.parts;
 create policy parts_select on public.parts for select to authenticated using (public.current_app_role() in ('owner', 'manager'));
 create policy parts_insert on public.parts for insert to authenticated with check (public.current_app_role() in ('owner', 'manager'));
 create policy parts_update on public.parts for update to authenticated using (public.current_app_role() in ('owner', 'manager')) with check (public.current_app_role() in ('owner', 'manager'));
-create policy parts_delete on public.parts for delete to authenticated using (public.current_app_role() = 'owner');
+create policy parts_delete on public.parts for delete to authenticated using (public.current_app_role() in ('owner', 'manager'));
 
 drop policy if exists sales_select on public.bike_sales;
 drop policy if exists sales_insert on public.bike_sales;

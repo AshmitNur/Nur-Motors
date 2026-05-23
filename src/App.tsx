@@ -702,6 +702,89 @@ export default function App() {
     event.currentTarget.reset();
   };
 
+  const updateBikeStock = async (event: FormEvent<HTMLFormElement>, bike: InventoryBike) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const updatedBike: InventoryBike = {
+      ...bike,
+      brand: "Suzuki",
+      model: String(form.get("model") || ""),
+      color: String(form.get("color") || ""),
+      year: Number(form.get("year") || new Date().getFullYear()),
+      chassis_number: String(form.get("chassis_number") || ""),
+      engine_number: String(form.get("engine_number") || ""),
+      purchase_price: Number(form.get("purchase_price") || 0),
+      supplier_name: String(form.get("supplier_name") || "Suzuki Dealer BD"),
+      purchase_date: String(form.get("purchase_date") || todayISO()),
+      current_status: String(form.get("current_status") || "Available") as InventoryBike["current_status"],
+      location: String(form.get("location") || "Showroom"),
+    };
+    try {
+      await updateRecord("bikes", bike.id, updatedBike);
+      setData((current) => current && { ...current, bikes: current.bikes.map((item) => (item.id === bike.id ? updatedBike : item)) });
+      addActivity(`Updated Suzuki ${updatedBike.model} stock`, "Bike Stock");
+      return true;
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Unable to update bike stock.");
+      return false;
+    }
+  };
+
+  const deleteBikeStock = async (bike: InventoryBike) => {
+    const hasLinkedSale = data.sales.some((sale) => sale.bike_id === bike.id || sale.chassis_number === bike.chassis_number);
+    if (hasLinkedSale) {
+      window.alert("This bike has a linked sale record. Delete the sale first before deleting the stock item.");
+      return;
+    }
+    const confirmed = window.confirm(`Delete Suzuki ${bike.model} stock item with chassis ${bike.chassis_number}?`);
+    if (!confirmed) return;
+    try {
+      await deleteRecord("bikes", bike.id);
+      setData((current) => current && { ...current, bikes: current.bikes.filter((item) => item.id !== bike.id) });
+      addActivity(`Deleted Suzuki ${bike.model} stock`, "Bike Stock");
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Unable to delete bike stock.");
+    }
+  };
+
+  const updatePartStock = async (event: FormEvent<HTMLFormElement>, part: Part) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const updatedPart: Part = {
+      ...part,
+      part_name: String(form.get("part_name") || ""),
+      category: String(form.get("category") || ""),
+      brand: String(form.get("brand") || ""),
+      quantity_available: Number(form.get("quantity_available") || 0),
+      purchase_price_per_unit: Number(form.get("purchase_price_per_unit") || 0),
+      selling_price_per_unit: Number(form.get("selling_price_per_unit") || 0),
+      supplier_name: String(form.get("supplier_name") || ""),
+      minimum_stock_level: Number(form.get("minimum_stock_level") || 0),
+      location: String(form.get("location") || ""),
+    };
+    try {
+      await updateRecord("parts", part.id, updatedPart);
+      setData((current) => current && { ...current, parts: current.parts.map((item) => (item.id === part.id ? updatedPart : item)) });
+      addActivity(`Updated part stock ${updatedPart.part_name}`, "Parts Stock");
+      return true;
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Unable to update part stock.");
+      return false;
+    }
+  };
+
+  const deletePartStock = async (part: Part) => {
+    const confirmed = window.confirm(`Delete part stock item ${part.part_name}?`);
+    if (!confirmed) return;
+    try {
+      await deleteRecord("parts", part.id);
+      setData((current) => current && { ...current, parts: current.parts.filter((item) => item.id !== part.id) });
+      addActivity(`Deleted part stock ${part.part_name}`, "Parts Stock");
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "Unable to delete part stock.");
+    }
+  };
+
   const addMoneyTransaction = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -829,7 +912,19 @@ export default function App() {
           />
         )}
         {page === "service" && <ServiceModule data={data} query={query} addServiceRecord={addServiceRecord} />}
-        {page === "inventory" && <InventoryModule data={data} query={query} addBikeStock={addBikeStock} addPartStock={addPartStock} />}
+        {page === "inventory" && (
+          <InventoryModule
+            data={data}
+            query={query}
+            addBikeStock={addBikeStock}
+            addPartStock={addPartStock}
+            updateBikeStock={updateBikeStock}
+            deleteBikeStock={deleteBikeStock}
+            updatePartStock={updatePartStock}
+            deletePartStock={deletePartStock}
+            canManageStock={role === "owner" || role === "manager"}
+          />
+        )}
         {page === "finance" && <FinanceModule data={data} query={query} addMoneyTransaction={addMoneyTransaction} />}
         {page === "customers" && <CustomersModule data={data} query={query} addCustomer={addCustomer} />}
         {page === "reports" && <ReportsModule data={data} metrics={metrics} expenses={expenses} query={query} />}
@@ -1281,13 +1376,25 @@ function InventoryModule({
   query,
   addBikeStock,
   addPartStock,
+  updateBikeStock,
+  deleteBikeStock,
+  updatePartStock,
+  deletePartStock,
+  canManageStock,
 }: {
   data: WorkspaceData;
   query: string;
   addBikeStock: (event: FormEvent<HTMLFormElement>) => void;
   addPartStock: (event: FormEvent<HTMLFormElement>) => void;
+  updateBikeStock: (event: FormEvent<HTMLFormElement>, bike: InventoryBike) => Promise<boolean>;
+  deleteBikeStock: (bike: InventoryBike) => void;
+  updatePartStock: (event: FormEvent<HTMLFormElement>, part: Part) => Promise<boolean>;
+  deletePartStock: (part: Part) => void;
+  canManageStock: boolean;
 }) {
   const [showForm, setShowForm] = useState(false);
+  const [editingBike, setEditingBike] = useState<InventoryBike | null>(null);
+  const [editingPart, setEditingPart] = useState<Part | null>(null);
   const bikes = data.bikes.filter((bike) => matchesBike(bike, query));
   const parts = data.parts.filter((part) => matchesPart(part, query));
   return (
@@ -1335,33 +1442,108 @@ function InventoryModule({
           </div>
         </Panel>
       )}
+      {editingBike && (
+        <Panel title={`Edit Bike Stock - ${editingBike.model}`}>
+          <form
+            className="form-grid"
+            onSubmit={(event) => {
+              void updateBikeStock(event, editingBike).then((saved) => {
+                if (saved) setEditingBike(null);
+              });
+            }}
+          >
+            <Field name="model" label="Model" defaultValue={editingBike.model} required />
+            <Field name="color" label="Color" defaultValue={editingBike.color} />
+            <Field name="year" label="Year" type="number" defaultValue={editingBike.year} required />
+            <Field name="chassis_number" label="Chassis Number" defaultValue={editingBike.chassis_number} required />
+            <Field name="engine_number" label="Engine Number" defaultValue={editingBike.engine_number} required />
+            <Field name="purchase_price" label="Purchase Price" type="number" defaultValue={editingBike.purchase_price} required />
+            <Field name="supplier_name" label="Supplier" defaultValue={editingBike.supplier_name} required />
+            <Field name="purchase_date" label="Purchase Date" type="date" defaultValue={editingBike.purchase_date} />
+            <Field name="location" label="Location" defaultValue={editingBike.location} />
+            <SelectField name="current_status" label="Status" options={["Available", "Reserved", "Damaged", "Sold"]} defaultValue={editingBike.current_status} />
+            <div className="button-row full">
+              <button type="button" className="secondary" onClick={() => setEditingBike(null)}>Cancel</button>
+              <button type="submit"><Bike size={16} /> Save Changes</button>
+            </div>
+          </form>
+        </Panel>
+      )}
+      {editingPart && (
+        <Panel title={`Edit Part Stock - ${editingPart.part_name}`}>
+          <form
+            className="form-grid"
+            onSubmit={(event) => {
+              void updatePartStock(event, editingPart).then((saved) => {
+                if (saved) setEditingPart(null);
+              });
+            }}
+          >
+            <Field name="part_name" label="Part Name" defaultValue={editingPart.part_name} required />
+            <Field name="category" label="Category" defaultValue={editingPart.category} required />
+            <Field name="brand" label="Part Brand" defaultValue={editingPart.brand} />
+            <Field name="quantity_available" label="Quantity" type="number" defaultValue={editingPart.quantity_available} required />
+            <Field name="minimum_stock_level" label="Minimum Stock" type="number" defaultValue={editingPart.minimum_stock_level} />
+            <Field name="purchase_price_per_unit" label="Buy Price / Unit" type="number" defaultValue={editingPart.purchase_price_per_unit} required />
+            <Field name="selling_price_per_unit" label="Sell Price / Unit" type="number" defaultValue={editingPart.selling_price_per_unit} required />
+            <Field name="supplier_name" label="Supplier" defaultValue={editingPart.supplier_name} required />
+            <Field name="location" label="Location" defaultValue={editingPart.location} />
+            <div className="button-row full">
+              <button type="button" className="secondary" onClick={() => setEditingPart(null)}>Cancel</button>
+              <button type="submit"><PackagePlus size={16} /> Save Changes</button>
+            </div>
+          </form>
+        </Panel>
+      )}
       <div className="inventory-stack">
         <Panel title="Bike Stock">
           <Table
-            headers={["Company", "Model", "Chassis", "Engine", "Value", "Status", "Location"]}
-            rows={bikes.map((bike) => [
-              bike.brand,
-              bike.model,
-              bike.chassis_number,
-              bike.engine_number,
-              formatBDT(bike.purchase_price),
-              <StatusBadge value={bike.current_status} />,
-              bike.location,
-            ])}
+            headers={canManageStock ? ["Company", "Model", "Chassis", "Engine", "Value", "Status", "Location", "Actions"] : ["Company", "Model", "Chassis", "Engine", "Value", "Status", "Location"]}
+            rows={bikes.map((bike) => {
+              const row: React.ReactNode[] = [
+                bike.brand,
+                bike.model,
+                bike.chassis_number,
+                bike.engine_number,
+                formatBDT(bike.purchase_price),
+                <StatusBadge value={bike.current_status} />,
+                bike.location,
+              ];
+              if (canManageStock) {
+                row.push(
+                  <div className="row-actions">
+                    <button className="small secondary" onClick={() => setEditingBike(bike)}>Edit</button>
+                    <button className="small danger" onClick={() => deleteBikeStock(bike)}>Delete</button>
+                  </div>,
+                );
+              }
+              return row;
+            })}
           />
         </Panel>
         <Panel title="Parts Stock">
           <Table
-            headers={["Part", "Category", "Qty", "Min", "Buy", "Sell", "Status"]}
-            rows={parts.map((part: Part) => [
-              part.part_name,
-              part.category,
-              part.quantity_available,
-              part.minimum_stock_level,
-              formatBDT(part.purchase_price_per_unit),
-              formatBDT(part.selling_price_per_unit),
-              <StatusBadge value={isLowStock(part) ? "Low Stock" : "Available"} />,
-            ])}
+            headers={canManageStock ? ["Part", "Category", "Qty", "Min", "Buy", "Sell", "Status", "Actions"] : ["Part", "Category", "Qty", "Min", "Buy", "Sell", "Status"]}
+            rows={parts.map((part: Part) => {
+              const row: React.ReactNode[] = [
+                part.part_name,
+                part.category,
+                part.quantity_available,
+                part.minimum_stock_level,
+                formatBDT(part.purchase_price_per_unit),
+                formatBDT(part.selling_price_per_unit),
+                <StatusBadge value={isLowStock(part) ? "Low Stock" : "Available"} />,
+              ];
+              if (canManageStock) {
+                row.push(
+                  <div className="row-actions">
+                    <button className="small secondary" onClick={() => setEditingPart(part)}>Edit</button>
+                    <button className="small danger" onClick={() => deletePartStock(part)}>Delete</button>
+                  </div>,
+                );
+              }
+              return row;
+            })}
           />
         </Panel>
       </div>

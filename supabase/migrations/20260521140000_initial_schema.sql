@@ -480,12 +480,12 @@ create policy customers_delete on public.customers for delete to authenticated u
 create policy bikes_select on public.bikes for select to authenticated using (public.current_app_role() in ('owner', 'manager'));
 create policy bikes_insert on public.bikes for insert to authenticated with check (public.current_app_role() in ('owner', 'manager'));
 create policy bikes_update on public.bikes for update to authenticated using (public.current_app_role() in ('owner', 'manager')) with check (public.current_app_role() in ('owner', 'manager'));
-create policy bikes_delete on public.bikes for delete to authenticated using (public.current_app_role() = 'owner');
+create policy bikes_delete on public.bikes for delete to authenticated using (public.current_app_role() in ('owner', 'manager'));
 
 create policy parts_select on public.parts for select to authenticated using (public.current_app_role() in ('owner', 'manager'));
 create policy parts_insert on public.parts for insert to authenticated with check (public.current_app_role() in ('owner', 'manager'));
 create policy parts_update on public.parts for update to authenticated using (public.current_app_role() in ('owner', 'manager')) with check (public.current_app_role() in ('owner', 'manager'));
-create policy parts_delete on public.parts for delete to authenticated using (public.current_app_role() = 'owner');
+create policy parts_delete on public.parts for delete to authenticated using (public.current_app_role() in ('owner', 'manager'));
 
 create policy sales_select on public.bike_sales for select to authenticated using (public.current_app_role() in ('owner', 'manager', 'accountant', 'staff'));
 create policy sales_insert on public.bike_sales for insert to authenticated with check (public.current_app_role() in ('owner', 'manager', 'staff'));
