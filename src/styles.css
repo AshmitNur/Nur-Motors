@@ -22,6 +22,7 @@
 
 body {
   margin: 0;
+  overflow-x: hidden;
 }
 
 button,
@@ -238,6 +239,20 @@ button.danger {
 
 .mobile-only {
   display: none;
+}
+
+.nav-backdrop {
+  background: rgba(15, 23, 42, 0.46);
+  border: 0;
+  border-radius: 0;
+  bottom: 0;
+  left: 0;
+  min-height: 0;
+  padding: 0;
+  position: fixed;
+  right: 0;
+  top: 0;
+  z-index: 19;
 }
 
 .banner {
@@ -719,6 +734,10 @@ tbody tr:hover {
     display: inline-flex;
   }
 
+  .nav-backdrop.mobile-only {
+    display: block;
+  }
+
   .kpi-grid,
   .chart-grid,
   .split-grid,
@@ -731,22 +750,182 @@ tbody tr:hover {
 
 @media (max-width: 760px) {
   .main {
-    padding: 12px;
+    padding: 10px;
   }
 
   .topbar {
+    align-items: stretch;
     flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 14px;
   }
 
   .search-box {
     flex-basis: 100%;
     order: 2;
+    min-height: 40px;
+  }
+
+  .role-chip {
+    align-items: center;
+    display: inline-flex;
+    justify-content: center;
+    min-height: 38px;
+    padding: 0 10px;
+  }
+
+  .auth-button {
+    flex: 1;
+    justify-content: center;
+    max-width: none;
+    min-width: 0;
   }
 
   .page-title,
   .panel-head {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .page-title {
+    gap: 10px;
+  }
+
+  .page-title h1,
+  .drawer h2 {
+    font-size: 22px;
+    line-height: 28px;
+  }
+
+  .page-title > button,
+  .page-title > .button-row,
+  .panel-head > button,
+  .panel-head > .filter-pills {
+    width: 100%;
+  }
+
+  .page-title button,
+  .panel-head button,
+  .button-row button {
+    justify-content: center;
+  }
+
+  .panel {
+    padding: 12px;
+  }
+
+  .kpi {
+    min-height: 88px;
+  }
+
+  .tabs {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .tabs::-webkit-scrollbar {
+    display: none;
+  }
+
+  .tabs button {
+    flex: 0 0 auto;
+  }
+
+  .table-wrap {
+    overflow-x: visible;
+  }
+
+  table,
+  thead,
+  tbody,
+  tr,
+  th,
+  td {
+    display: block;
+  }
+
+  table {
+    min-width: 0;
+  }
+
+  thead {
+    height: 1px;
+    overflow: hidden;
+    position: absolute;
+    width: 1px;
+  }
+
+  tbody {
+    display: grid;
+    gap: 10px;
+  }
+
+  tbody tr {
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+
+  tbody tr:hover {
+    background: #fff;
+  }
+
+  td {
+    align-items: flex-start;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    gap: 12px;
+    justify-content: space-between;
+    min-height: 42px;
+    padding: 10px 12px;
+    text-align: right;
+  }
+
+  td:last-child {
+    border-bottom: 0;
+  }
+
+  td::before {
+    color: var(--muted);
+    content: attr(data-label);
+    flex: 0 0 42%;
+    font-size: 11px;
+    font-weight: 800;
+    text-align: left;
+    text-transform: uppercase;
+  }
+
+  td.empty {
+    display: block;
+    text-align: center;
+  }
+
+  td.empty::before {
+    content: "";
+  }
+
+  .customer-cell {
+    text-align: right;
+  }
+
+  .row-actions {
+    justify-content: flex-end;
+  }
+
+  .row-actions button {
+    flex: 1 1 96px;
+    justify-content: center;
+  }
+
+  .button-row {
+    align-items: stretch;
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .full {
+    justify-content: stretch;
   }
 
   .kpi-grid,
@@ -757,5 +936,10 @@ tbody tr:hover {
   .backup-grid,
   .form-grid {
     grid-template-columns: 1fr;
+  }
+
+  .drawer {
+    max-width: none;
+    padding: 16px;
   }
 }

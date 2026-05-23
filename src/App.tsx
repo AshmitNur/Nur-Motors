@@ -882,6 +882,7 @@ export default function App() {
 
   return (
     <div className="app-shell">
+      {mobileNav && <button className="nav-backdrop mobile-only" aria-label="Close navigation" onClick={() => setMobileNav(false)} />}
       <aside className={`sidebar ${mobileNav ? "open" : ""}`}>
         <div className="brand">
           <div className="brand-mark">NM</div>
@@ -1896,7 +1897,13 @@ function Table({ headers, rows, empty = "No records found." }: { headers: string
             <tr><td colSpan={headers.length} className="empty">{empty}</td></tr>
           ) : (
             rows.map((row, rowIndex) => (
-              <tr key={rowIndex}>{row.map((cell, cellIndex) => <td key={cellIndex}>{cell}</td>)}</tr>
+              <tr key={rowIndex}>
+                {row.map((cell, cellIndex) => (
+                  <td key={cellIndex} data-label={headers[cellIndex] ?? ""}>
+                    {cell}
+                  </td>
+                ))}
+              </tr>
             ))
           )}
         </tbody>
