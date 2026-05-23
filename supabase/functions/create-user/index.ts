@@ -3,6 +3,9 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2.89.0";
 
 type Role = "owner" | "manager" | "accountant" | "staff";
 
+const userIdDomain = "nur-motors.local";
+const userIdPattern = /^[a-z0-9._-]+$/;
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -59,13 +62,18 @@ serve(async (req) => {
     role?: Role;
   };
 
-  const email = body?.email?.trim().toLowerCase();
+  let email: string;
+  try {
+    email = normalizeUserIdentifier(body?.email ?? "");
+  } catch (error) {
+    return json({ error: error instanceof Error ? error.message : "Invalid user ID or email." }, 400);
+  }
   const password = body?.password ?? "";
   const displayName = body?.displayName?.trim();
   const role = body?.role;
 
   if (!email || !password || !displayName || !role) {
-    return json({ error: "Email, password, display name, and role are required." }, 400);
+    return json({ error: "User ID or email, password, display name, and role are required." }, 400);
   }
 
   if (!["owner", "manager", "accountant", "staff"].includes(role)) {
@@ -120,4 +128,14 @@ function json(payload: unknown, status = 200) {
       "Content-Type": "application/json",
     },
   });
+}
+
+function normalizeUserIdentifier(value: string) {
+  const identifier = value.trim().toLowerCase();
+  if (!identifier) throw new Error("User ID or email is required.");
+  if (identifier.includes("@")) return identifier;
+  if (!userIdPattern.test(identifier)) {
+    throw new Error("User ID can only use letters, numbers, dots, dashes, and underscores.");
+  }
+  return `${identifier}@${userIdDomain}`;
 }

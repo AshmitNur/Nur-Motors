@@ -1,6 +1,7 @@
 import type { WorkspaceData } from "../types";
 import { mockData } from "./mockData";
 import { hasSupabaseConfig, supabase, supabaseUrl } from "./supabase";
+import { normalizeUserIdentifier } from "./userIds";
 
 const tableMap = {
   staff: "staff",
@@ -100,6 +101,7 @@ export async function loadCurrentProfile() {
 
 export async function createMemberUser(input: { email: string; password: string; displayName: string; role: "owner" | "manager" | "accountant" | "staff" }) {
   if (!supabase || !supabaseUrl) throw new Error("Supabase is not configured.");
+  const email = normalizeUserIdentifier(input.email);
   const { data: sessionData } = await supabase.auth.getSession();
   const token = sessionData.session?.access_token;
   if (!token) throw new Error("You must be signed in as owner.");
@@ -112,7 +114,7 @@ export async function createMemberUser(input: { email: string; password: string;
         "Content-Type": "application/json",
         Authorization: `Bearer ${token}`,
       },
-      body: JSON.stringify(input),
+      body: JSON.stringify({ ...input, email }),
     });
   } catch (error) {
     throw new Error("User creation service is not deployed or is unreachable. Deploy the Supabase Edge Function `create-user` first.");

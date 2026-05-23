@@ -58,6 +58,7 @@ import { dashboardMetrics, dueStatus, expenseCategorySeries, formatBDT, isLowSto
 import { downloadBikeSaleInvoice, downloadBusinessSummary, downloadDueReceipt } from "./lib/invoiceDocuments";
 import { createMemberUser, deleteRecord, insertRecord, loadCurrentProfile, loadWorkspaceData, updateRecord } from "./lib/repository";
 import { hasSupabaseConfig, supabase } from "./lib/supabase";
+import { displayUserIdentifier, normalizeUserIdentifier } from "./lib/userIds";
 
 type Page = "dashboard" | "sales" | "service" | "inventory" | "finance" | "customers" | "reports" | "backup" | "activity";
 type Tab = "sales-records" | "new-sale" | "active-dues" | "payment-history";
@@ -307,8 +308,15 @@ export default function App() {
     if (!supabase) return;
     setAuthError(null);
     const form = new FormData(event.currentTarget);
-    const email = String(form.get("email") || "");
+    const identifier = String(form.get("email") || "");
     const password = String(form.get("password") || "");
+    let email: string;
+    try {
+      email = normalizeUserIdentifier(identifier);
+    } catch (error) {
+      setAuthError(error instanceof Error ? error.message : "Enter a valid user ID or email.");
+      return;
+    }
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
       setAuthError(error.message);
@@ -337,9 +345,9 @@ export default function App() {
         displayName: String(form.get("display_name") || ""),
         role: String(form.get("role") || "staff") as Role,
       });
-      setCreateUserSuccess(`Created ${user.email} as ${user.role}.`);
+      setCreateUserSuccess(`Created ${displayUserIdentifier(user.email)} as ${user.role}.`);
       formElement.reset();
-      addActivity(`Created user ${user.email} as ${user.role}`, "User");
+      addActivity(`Created user ${displayUserIdentifier(user.email)} as ${user.role}`, "User");
     } catch (error) {
       setCreateUserError(error instanceof Error ? error.message : "Unable to create user.");
     }
@@ -936,7 +944,7 @@ export default function App() {
           </button>
           <button className="user-chip auth-button" onClick={() => (authEmail ? void signOut() : undefined)}>
             <UserRound size={16} />
-            <span>{authEmail ?? displayName}</span>
+            <span>{authEmail ? displayUserIdentifier(authEmail) : displayName}</span>
             {authEmail && <LogOut size={14} />}
           </button>
         </header>
@@ -1047,7 +1055,7 @@ function AuthPage({ authError, onSignIn }: { authError: string | null; onSignIn:
         <h1>Role-based staff access</h1>
         <p>Sign in with the user ID and password issued by the owner. Staff accounts cannot self-register.</p>
         <form className="form-grid single" onSubmit={onSignIn}>
-          <Field name="email" label="User ID / Email" type="email" required />
+          <Field name="email" label="User ID or Email" autoComplete="username" required />
           <Field name="password" label="Password" type="password" required />
           {authError && <Banner tone="danger">{authError}</Banner>}
           <button type="submit">
@@ -1831,7 +1839,7 @@ function ActivityModule({
         <Panel title="Owner User Management">
           <form className="form-grid" onSubmit={createUser}>
             <Field name="display_name" label="Staff Name" autoComplete="off" required />
-            <Field name="new_user_email" label="User ID / Email" type="email" autoComplete="off" required />
+            <Field name="new_user_email" label="User ID or Email" autoComplete="username" required />
             <Field name="new_user_password" label="Temporary Password" type="password" autoComplete="new-password" required />
             <SelectField name="role" label="Role" options={["manager", "accountant", "staff"]} defaultValue="staff" />
             {createUserError && <div className="full"><Banner tone="danger">{createUserError}</Banner></div>}
